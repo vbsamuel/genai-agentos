@@ -1,0 +1,55 @@
+name: ai-fabric-ci
+
+on:
+  pull_request:
+    paths:
+      - 'ai-fabric/**'
+      - '.github/workflows/ai-fabric-ci.yml'
+  push:
+    branches:
+      - feature/ai-fabric-microservices-v3
+    paths:
+      - 'ai-fabric/**'
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ai-fabric
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTFLAGS: '-D warnings'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ai-fabric
+      - name: Formatting gate
+        run: cargo fmt --all -- --check
+      - name: Compile gate
+        run: cargo check --workspace --all-targets
+      - name: Clippy gate
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Unit and invariant gates
+        run: cargo test --workspace --all-targets
+      - name: Dependency license inventory
+        run: |
+          cargo install cargo-license --locked
+          cargo license --json > target/dependency-licenses.json
+      - name: Prohibit Redis and Celery dependencies
+        run: |
+          ! grep -RniE '(^|[^a-z])(redis|celery)([^a-z]|$)' Cargo.toml crates services
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-fabric-evidence
+          path: |
+            ai-fabric/target/dependency-licenses.json
